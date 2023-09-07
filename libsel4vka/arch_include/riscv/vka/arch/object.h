@@ -34,6 +34,11 @@ vka_arch_get_object_size(seL4_Word objectType)
     case seL4_RISCV_PageTableObject:
         return seL4_PageTableBits;
 
+#ifdef CONFIG_RISCV_UINTR
+    case seL4_RISCV_UintrObject:
+        return seL4_UintrBits;
+#endif
+
     default:
          ZF_LOGE("Unknown object type %ld", (long)objectType);
          return -1;

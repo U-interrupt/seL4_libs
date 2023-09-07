@@ -63,6 +63,7 @@ long sys_brk(va_list ap)
    here to support that. We make a bunch of assumptions in the process */
 long sys_mmap_impl(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
+    printf("mmap2 %p, %lx, %x, %x, %d, %lx\n", addr, length, prot, flags, fd, offset);
     if (flags & MAP_ANONYMOUS) {
         /* Check that we don't try and allocate more than exists */
         if (length > morecore_top - morecore_base) {
@@ -72,7 +73,8 @@ long sys_mmap_impl(void *addr, size_t length, int prot, int flags, int fd, off_t
         morecore_top -= length;
         return morecore_top;
     }
-    assert(!"not implemented");
+    // assert(!"not implemented");
+    printf("mmap2 %p, %lx, %x, %x, %d, %lx\n", addr, length, prot, flags, fd, offset);
     return -ENOMEM;
 }
 

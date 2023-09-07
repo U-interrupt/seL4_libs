@@ -32,3 +32,6 @@ bool muslcsys_get_boot_set_tid_address(int **arg) NONNULL(1);
 #if defined(__NR_set_thread_area) || defined(__ARM_NR_set_tls)
 bool muslcsys_get_boot_set_thread_area(void **arg) NONNULL(1);
 #endif
+
+typedef void (*syscall_trace_fn)(long sysnum);
+void muslcsys_register_syscall_trace_fn(syscall_trace_fn fn);

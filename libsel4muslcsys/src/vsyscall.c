@@ -262,6 +262,14 @@ static void debug_error(int sysnum)
 }
 #endif
 
+
+
+static void default_syscall_trace(long sysnum) {}
+static syscall_trace_fn syscall_trace = default_syscall_trace;
+void muslcsys_register_syscall_trace_fn(syscall_trace_fn fn) {
+    syscall_trace = fn;
+}
+
 long sel4_vsyscall(long sysnum, ...)
 {
     va_list al;
@@ -282,6 +290,7 @@ long sel4_vsyscall(long sysnum, ...)
         debug_error(sysnum);
         return -ENOSYS;
     }
+    syscall_trace(sysnum);
     /* Call it */
     long ret = syscall(al);
     va_end(al);
