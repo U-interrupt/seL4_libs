@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <bits/syscall.h>
@@ -168,7 +169,7 @@ static long sel4service_pread64(va_list ap) {
   void *buf = va_arg(ap, void *);
   size_t count = va_arg(ap, size_t);
   off_t off = va_arg(ap, off_t);
-  printf("pread64 %d %p %lu %lu\n", fd, buf, count, off);
+  // printf("pread64 %d %p %lu %lu\n", fd, buf, count, off);
   return sel4service_rw_imp(fd, buf, count, off, FS_PREAD, 0);
 }
 
@@ -247,31 +248,31 @@ static long sel4service_pwrite64(va_list ap) {
   void *buf = va_arg(ap, void *);
   size_t count = va_arg(ap, size_t);
   off_t off = va_arg(ap, off_t);
-  printf("pwrite64 %d %p %lu %lu\n", fd, buf, count, off);
+  // printf("pwrite64 %d %p %lu %lu\n", fd, buf, count, off);
   return sel4service_rw_imp(fd, buf, count, off, FS_PWRITE, 1);
 }
 
 static long sel4service_fcntl64(va_list ap) {
   int fd = va_arg(ap, int);
   int cmd = va_arg(ap, int);
-  printf("fcntl fd=%d ", fd);
+  // printf("fcntl fd=%d ", fd);
 
   /* we just set the lock manually */
   if (cmd == F_GETLK) {
     struct flock *lock = va_arg(ap, struct flock *);
-    printf("GETLK %d %d %lx %lx %d", lock->l_type, lock->l_whence,
-           lock->l_start, lock->l_len, lock->l_pid);
+    // printf("GETLK %d %d %lx %lx %d", lock->l_type, lock->l_whence,
+    //        lock->l_start, lock->l_len, lock->l_pid);
     lock->l_type = F_UNLCK;
   } else if (cmd == F_SETLK) {
     struct flock *lock = va_arg(ap, struct flock *);
-    printf("SETLK %d %d %lx %lx %d", lock->l_type, lock->l_whence,
-           lock->l_start, lock->l_len, lock->l_pid);
+    // printf("SETLK %d %d %lx %lx %d", lock->l_type, lock->l_whence,
+    //        lock->l_start, lock->l_len, lock->l_pid);
   } else if (cmd == F_SETFD) {
     int flags = va_arg(ap, int);
-    printf("SETFD %d", flags);
+    // printf("SETFD %d", flags);
   }
 
-  printf("\n");
+  // printf("\n");
   return 0;
 }
 
@@ -283,7 +284,7 @@ static long sel4service_fstat_imp(int fd, struct stat *stat) {
   memmove(stat, init_data->server_buf, sizeof(struct stat));
   stat->st_mode |= 0777;
   stat->st_blksize = 1024;
-  printf("fstat %o 0x%lx %lu\n", stat->st_mode, stat->st_size, stat->st_ino);
+  // printf("fstat %o 0x%lx %lu\n", stat->st_mode, stat->st_size, stat->st_ino);
   return seL4_GetMR(0);
 }
 
@@ -328,6 +329,42 @@ static long sel4service_lseek(va_list ap) {
   return seL4_GetMR(0);
 }
 
+#ifdef __ASSEMBLER__
+#define __ASM_STR(x) x
+#else
+#define __ASM_STR(x) #x
+#endif
+
+#define csr_read(csr)                                                          \
+  ({                                                                           \
+    register unsigned long __v;                                                \
+    __asm__ __volatile__("csrr %0, " __ASM_STR(csr) : "=r"(__v) : : "memory"); \
+    __v;                                                                       \
+  })
+
+static inline uint64_t get_time64(void) { return csr_read(0xc01); }
+
+#define TIMEBASE_FREQ 10000000
+#define USEC_PER_SEC 1000000
+#define NSEC_PER_SEC 1000000000
+
+static long sel4service_gettimeofday(va_list ap) {
+  struct timeval *v = va_arg(ap, struct timeval *);
+  uint64_t time = get_time64();
+  v->tv_sec = time / TIMEBASE_FREQ;
+  v->tv_usec = time * USEC_PER_SEC / TIMEBASE_FREQ - v->tv_sec * USEC_PER_SEC;
+  return 0;
+}
+
+static long sel4service_gettime(va_list ap) {
+  clockid_t id = va_arg(ap, clockid_t);
+  struct timespec *v = va_arg(ap, struct timespec *);
+  uint64_t time = get_time64();
+  v->tv_sec = time / TIMEBASE_FREQ;
+  v->tv_nsec = time * NSEC_PER_SEC / TIMEBASE_FREQ - v->tv_sec * NSEC_PER_SEC;
+  return 0;
+}
+
 static void syscall_trace(long sysnum) {
   char buf[100];
   int i;
@@ -339,9 +376,7 @@ static void syscall_trace(long sysnum) {
 
 void init_syscall_table(seL4_CPtr ep, init_data_t init) {
   sel4muslcsys_register_stdio_write_fn(write_buf);
-  muslcsys_register_syscall_trace_fn(syscall_trace);
-
-  ZF_LOGD("Swtich the thread syscalls to remote function call\n");
+  // muslcsys_register_syscall_trace_fn(syscall_trace);
 
   fs_ep = ep;
   init_data = init;
@@ -354,8 +389,8 @@ void init_syscall_table(seL4_CPtr ep, init_data_t init) {
   muslcsys_install_syscall(__NR_close, sel4service_close);
   muslcsys_install_syscall(__NR_fcntl64, sel4service_fcntl64);
   muslcsys_install_syscall(__NR_getdents64, sel4service_unimp);
-  muslcsys_install_syscall(__NR_clock_gettime, sel4service_unimp);
-  muslcsys_install_syscall(__NR_gettimeofday, sel4service_unimp);
+  muslcsys_install_syscall(__NR_clock_gettime, sel4service_gettime);
+  muslcsys_install_syscall(__NR_gettimeofday, sel4service_gettimeofday);
   muslcsys_install_syscall(__NR_fstat64, sel4service_fstat64);
   muslcsys_install_syscall(__NR_getcwd, sel4service_getcwd);
   muslcsys_install_syscall(__NR_lstat64, sel4service_lstat64);
@@ -369,4 +404,5 @@ void init_syscall_table(seL4_CPtr ep, init_data_t init) {
   muslcsys_install_syscall(__NR_unlink, sel4service_unlink);
   muslcsys_install_syscall(__NR_getpid, sel4service_unimp);
   muslcsys_install_syscall(__NR_fsync, sel4service_unimp);
+  muslcsys_install_syscall(__NR_ftruncate64, sel4service_unimp);
 }
