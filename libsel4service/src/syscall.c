@@ -24,6 +24,7 @@
 #include <service/syscall.h>
 
 #define BUFFER_SIZE PAGE_SIZE_4K
+#define min(a, b) ((a) < (b) ? (a) : (b))
 
 static seL4_CPtr fs_ep = seL4_CapNull;
 
@@ -80,6 +81,15 @@ static size_t read_buf(void *data, size_t count) {
   return count;
 }
 
+static long sel4service_unlink(va_list ap) {
+  const char *pathname = va_arg(ap, const char *);
+  seL4_MessageInfo_t info = seL4_MessageInfo_new(FS_UNLINK, 0, 0, 1);
+  strcpy(init_data->server_buf, pathname);
+  seL4_SetMR(0, (seL4_Word)init_data->server_buf);
+  info = seL4_Call(fs_ep, info);
+  return seL4_GetMR(0);
+}
+
 static long sel4service_rw_imp(int fd, void *buf, size_t size, off_t off,
                                int label, int write) {
   int n = (size + BUFFER_SIZE - 1) / BUFFER_SIZE;
@@ -88,7 +98,7 @@ static long sel4service_rw_imp(int fd, void *buf, size_t size, off_t off,
   int i;
   size_t sum = 0;
   for (i = 0; i < n; i++) {
-    size_t count = (i == n - 1) ? (size % BUFFER_SIZE) : BUFFER_SIZE;
+    size_t count = min(size - i * BUFFER_SIZE, BUFFER_SIZE);
     seL4_MessageInfo_t info = seL4_MessageInfo_new(label, 0, 0, 4);
     seL4_SetMR(0, fd);
     seL4_SetMR(1, (seL4_Word)init_data->server_buf);
@@ -99,8 +109,6 @@ static long sel4service_rw_imp(int fd, void *buf, size_t size, off_t off,
     info = seL4_Call(fs_ep, info);
     if (!write)
       memmove(buf + sum, init_data->server_buf, count);
-    if (seL4_GetMR(0))
-      return sum;
     sum += seL4_GetMR(0);
   }
   return sum;
@@ -219,8 +227,8 @@ static long sel4service_writev(va_list ap) {
     }
   } else {
     for (int i = 0; i < iovcnt; i++) {
-      ret += sel4service_rw_imp(fd, iov[i].iov_base, iov[i].iov_len, 0, FS_WRITE,
-                                1);
+      ret += sel4service_rw_imp(fd, iov[i].iov_base, iov[i].iov_len, 0,
+                                FS_WRITE, 1);
     }
   }
 
@@ -358,4 +366,7 @@ void init_syscall_table(seL4_CPtr ep, init_data_t init) {
   muslcsys_install_syscall(__NR_geteuid32, sel4service_unimp);
   muslcsys_install_syscall(__NR_fchown32, sel4service_unimp);
   muslcsys_install_syscall(__NR_nanosleep, sel4service_unimp);
+  muslcsys_install_syscall(__NR_unlink, sel4service_unlink);
+  muslcsys_install_syscall(__NR_getpid, sel4service_unimp);
+  muslcsys_install_syscall(__NR_fsync, sel4service_unimp);
 }

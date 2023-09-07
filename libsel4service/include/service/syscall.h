@@ -22,6 +22,7 @@ void panic();
 #define FS_WRITE 4
 #define FS_OPEN 5
 #define FS_CLOSE 6
+#define FS_UNLINK 10
 #define FS_LSEEK 19
 #define FS_PREAD 180
 #define FS_PWRITE 181
