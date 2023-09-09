@@ -7,6 +7,9 @@
 /* Swtich the thread syscalls to remote function call */
 void init_syscall_table(seL4_CPtr ep, init_data_t init);
 
+/* Setup init data */
+void setup_init_data(init_data_t init);
+
 /* Fetch the nth 32-bit system call argument. */
 void argint(int n, int *ip);
 
@@ -17,6 +20,15 @@ void argaddr(int n, uint64_t *ip);
 int argstr(int n, char *buf, int max);
 
 void panic();
+
+#ifdef TEST_POLL
+/* This function will hold the lock */
+void Wait(seL4_Word *buf);
+
+int Call(seL4_Word *buf);
+#endif
+
+#define FS_RET 0
 
 #define FS_READ 3
 #define FS_WRITE 4
@@ -30,6 +42,7 @@ void panic();
 #define FS_LSTAT 196
 #define FS_FSTAT 197
 
-#define DISK_INIT 0
-#define DISK_READ 1
-#define DISK_WRITE 2
+#define DISK_RET 0
+#define DISK_INIT 1
+#define DISK_READ 2
+#define DISK_WRITE 3

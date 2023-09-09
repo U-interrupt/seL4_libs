@@ -8,6 +8,23 @@
 #include <vka/vka.h>
 #include <vspace/vspace.h>
 
+// #define TEST_NORMAL
+#define TEST_POLL
+// #define TEST_UINTR
+
+#define CUSTOM_IPC_BUFFER_BITS PAGE_BITS_4K
+#define CUSTOM_IPC_BUFFER_SIZE (BIT(CUSTOM_IPC_BUFFER_BITS))
+
+struct spinlock {
+  uint64_t locked;
+};
+
+typedef struct spinlock *spinlock_t;
+
+void initlock(struct spinlock *lk);
+void acquire(struct spinlock *lk);
+void release(struct spinlock *lk);
+
 struct init_data {
   /* page directory of the process */
   seL4_CPtr page_directory;
@@ -35,6 +52,14 @@ struct init_data {
 
   /* shared ipc buffer between this server and client */
   void *client_buf;
+
+#ifdef TEST_POLL
+  /* server ipc buffer guard */
+  spinlock_t server_lk;
+
+  /* client ipc buffer guard */
+  spinlock_t client_lk;
+#endif
 
   /* the number of pages in the stack */
   int stack_pages;
@@ -98,5 +123,3 @@ struct root_env {
 };
 
 typedef struct root_env *root_env_t;
-
-#define TEST_NORMAL
