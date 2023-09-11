@@ -5,10 +5,16 @@
 #include "env.h"
 
 /* Swtich the thread syscalls to remote function call */
-void init_syscall_table(seL4_CPtr ep, init_data_t init);
+void init_syscall_table(void);
 
 /* Setup init data */
 void setup_init_data(init_data_t init);
+
+/* Setup fs server endpoint */
+void setup_server_ep(seL4_CPtr ep);
+
+/* Setup fs server uintr */
+void setup_server_uintr(seL4_CPtr uintr);
 
 /* Fetch the nth 32-bit system call argument. */
 void argint(int n, int *ip);
@@ -26,6 +32,10 @@ void panic();
 void Wait(seL4_Word *buf);
 
 int Call(seL4_Word *buf);
+#endif
+
+#ifdef TEST_UINTR
+void Call(void);
 #endif
 
 #define FS_RET 0

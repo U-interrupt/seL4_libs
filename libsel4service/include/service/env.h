@@ -8,8 +8,8 @@
 #include <vka/vka.h>
 #include <vspace/vspace.h>
 
-// #define TEST_NORMAL
-#define TEST_POLL
+#define TEST_NORMAL
+// #define TEST_POLL
 // #define TEST_UINTR
 
 #define CUSTOM_IPC_BUFFER_BITS PAGE_BITS_4K
@@ -41,24 +41,30 @@ struct init_data {
   /* range of free slots in the cspace */
   seL4_SlotRegion free_slots;
 
-  /* endpoint of server */
-  seL4_CPtr server_ep;
-
   /* shared ipc buffer between server and this client */
   void *server_buf;
-
-  /* endpoint from client */
-  seL4_CPtr client_ep;
 
   /* shared ipc buffer between this server and client */
   void *client_buf;
 
-#ifdef TEST_POLL
+#ifdef TEST_NORMAL
+  /* endpoint of server */
+  seL4_CPtr server_ep;
+
+  /* endpoint from client */
+  seL4_CPtr client_ep;
+#elif defined (TEST_POLL)
   /* server ipc buffer guard */
   spinlock_t server_lk;
 
   /* client ipc buffer guard */
   spinlock_t client_lk;
+#elif defined (TEST_UINTR)
+  /* uintr of server */
+  seL4_CPtr server_uintr;
+
+  /* uintr of client */
+  seL4_CPtr client_uintr;
 #endif
 
   /* the number of pages in the stack */
@@ -109,17 +115,28 @@ struct root_env {
   /* RAM Disk device driver */
   struct proc_t ramdisk;
 
-  /* endpoint between app and fs server */
-  vka_object_t app_fs_ep;
-
   /* shared buffer between app and fs server*/
   void *app_fs_buf;
 
-  /* endpoint between fs server and device driver */
-  vka_object_t fs_ram_ep;
-
   /* shared buffer between fs server and device driver */
   void *fs_ram_buf;
+
+#ifdef TEST_NORMAL
+  /* endpoint between app and fs server */
+  vka_object_t app_fs_ep;
+
+  /* endpoint between fs server and device driver */
+  vka_object_t fs_ram_ep;
+#elif defined (TEST_UINTR)
+  /* uintr bound to app */
+  vka_object_t app_uintr;
+
+  /* uintr bound to fs */
+  vka_object_t fs_uintr;
+
+  /* uintr bound to ram */
+  vka_object_t ram_uintr;
+#endif
 };
 
 typedef struct root_env *root_env_t;

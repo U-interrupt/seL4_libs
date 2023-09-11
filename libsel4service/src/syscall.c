@@ -31,6 +31,8 @@ static seL4_CPtr fs_ep = seL4_CapNull;
 
 static init_data_t init_data = NULL;
 
+static int uintr_index = 0;
+
 void initlock(struct spinlock *lk) { lk->locked = 0; }
 
 void acquire(struct spinlock *lk) {
@@ -70,7 +72,7 @@ void release(struct spinlock *lk) {
 #ifdef TEST_NORMAL
 void argint(int n, int *ip) { *ip = seL4_GetMR(n); }
 void argaddr(int n, uint64_t *ip) { *ip = seL4_GetMR(n); }
-#elif defined(TEST_POLL)
+#elif defined(TEST_POLL) || defined(TEST_UINTR)
 void argint(int n, int *ip) {
   seL4_Word *buf = init_data->client_buf;
   *ip = buf[n + 1];
@@ -79,9 +81,6 @@ void argaddr(int n, uint64_t *ip) {
   seL4_Word *buf = init_data->client_buf;
   *ip = buf[n + 1];
 }
-#elif defined(TEST_UINTR)
-void argint(int n, int *ip) {}
-void argaddr(int n, uint64_t *ip) {}
 #endif
 
 /* Fetch the nth word-sized system call argument as a null-terminated string. */
@@ -113,6 +112,18 @@ int Call(seL4_Word *buf) {
 }
 #endif
 
+#ifdef TEST_UINTR
+void Call(void) {
+  seL4_Word badge;
+  seL4_UintrSend(uintr_index);
+  while (1) {
+    seL4_UintrNBRecv(&badge);
+    if (badge)
+      break;
+  }
+}
+#endif
+
 static long sel4service_unimp(va_list ap) { return 0; }
 
 static long sel4service_open_imp(const char *pathname, int flags, mode_t mode) {
@@ -134,6 +145,15 @@ static long sel4service_open_imp(const char *pathname, int flags, mode_t mode) {
   strcpy((char *)&buf[4], pathname);
   release(init_data->server_lk);
   return Call(buf);
+#elif defined(TEST_UINTR)
+  seL4_Word *buf = init_data->server_buf;
+  buf[0] = FS_OPEN;
+  buf[1] = (seL4_Word)&buf[4];
+  buf[2] = flags;
+  buf[3] = mode;
+  strcpy((char *)&buf[4], pathname);
+  Call();
+  return buf[1];
 #endif
 }
 
@@ -159,6 +179,12 @@ static long sel4service_close(va_list ap) {
   buf[1] = fd;
   release(init_data->server_lk);
   return Call(buf);
+#elif defined(TEST_UINTR)
+  seL4_Word *buf = init_data->server_buf;
+  buf[0] = FS_CLOSE;
+  buf[1] = fd;
+  Call();
+  return buf[1];
 #endif
 }
 
@@ -187,6 +213,13 @@ static long sel4service_unlink(va_list ap) {
   strcpy((char *)&buf[2], pathname);
   release(init_data->server_lk);
   return Call(buf);
+#elif defined(TEST_UINTR)
+  seL4_Word *buf = init_data->server_buf;
+  buf[0] = FS_UNLINK;
+  buf[1] = (seL4_Word)&buf[2];
+  strcpy((char *)&buf[2], pathname);
+  Call();
+  return buf[1];
 #endif
 }
 
@@ -228,6 +261,19 @@ static long sel4service_rw_imp(int fd, void *buf, size_t size, off_t off,
       memmove(buf + sum, (void *)&server_buf[5], count);
     sum += server_buf[1];
     release(init_data->server_lk);
+#elif defined(TEST_UINTR)
+    seL4_Word *server_buf = init_data->server_buf;
+    server_buf[0] = label;
+    server_buf[1] = fd;
+    server_buf[2] = (seL4_Word)&server_buf[5];
+    server_buf[3] = count;
+    server_buf[4] = off;
+    if (write)
+      memmove((void *)&server_buf[5], buf + sum, count);
+    Call();
+    if (!write)
+      memmove(buf + sum, (void *)&server_buf[5], count);
+    sum += server_buf[1];
 #endif
   }
   return sum;
@@ -419,6 +465,16 @@ static long sel4service_fstat_imp(int fd, struct stat *stat) {
   stat->st_mode |= 0777;
   stat->st_blksize = 1024;
   return ret;
+#elif defined(TEST_UINTR)
+  seL4_Word *buf = init_data->server_buf;
+  buf[0] = FS_FSTAT;
+  buf[1] = fd;
+  buf[2] = (seL4_Word)&buf[3];
+  Call();
+  memmove(stat, (void *)&buf[3], sizeof(struct stat));
+  stat->st_mode |= 0777;
+  stat->st_blksize = 1024;
+  return buf[1];
 #endif
 }
 
@@ -449,6 +505,14 @@ static long sel4service_getcwd(va_list ap) {
   int ret = buf[1];
   release(init_data->server_lk);
   return ret;
+#elif defined (TEST_UINTR)
+  seL4_Word *buf = init_data->server_buf;
+  buf[0] = FS_GETCWD;
+  buf[1] = (seL4_Word)&buf[3];
+  buf[2] = size;
+  Call();
+  strcpy(path, (char *)&buf[3]);
+  return buf[1];
 #endif
 }
 
@@ -480,6 +544,17 @@ static long sel4service_lstat64(va_list ap) {
   int ret = buf[1];
   release(init_data->server_lk);
   return ret;
+#elif defined(TEST_UINTR)
+  seL4_Word *buf = init_data->server_buf;
+  buf[0] = FS_LSTAT;
+  buf[1] = (seL4_Word)&buf[3];
+  buf[2] = (seL4_Word)&buf[3];
+  strcpy((char *)&buf[3], path);
+  Call();
+  memmove(stat, &buf[3], sizeof(struct stat));
+  stat->st_mode |= 0777;
+  stat->st_blksize = 1024;
+  return buf[1];
 #endif
 }
 
@@ -503,6 +578,13 @@ static long sel4service_lseek(va_list ap) {
   buf[3] = whence;
   release(init_data->server_lk);
   return Call(buf);
+#elif defined (TEST_UINTR)
+  seL4_Word *buf = init_data->server_buf;
+  buf[0] = FS_LSEEK;
+  buf[1] = fd;
+  buf[2] = off;
+  buf[3] = whence;
+  return buf[1];
 #endif
 }
 
@@ -553,12 +635,18 @@ static void syscall_trace(long sysnum) {
 
 void setup_init_data(init_data_t init) { init_data = init; }
 
-void init_syscall_table(seL4_CPtr ep, init_data_t init) {
-  sel4muslcsys_register_stdio_write_fn(write_buf);
-  // muslcsys_register_syscall_trace_fn(syscall_trace);
+void setup_server_ep(seL4_CPtr ep) { fs_ep = ep; }
 
-  fs_ep = ep;
-  setup_init_data(init);
+void setup_server_uintr(seL4_CPtr uintr) {
+  seL4_RISCV_Uintr_RegisterSender_t res =
+      seL4_RISCV_Uintr_RegisterSender(uintr);
+  ZF_LOGF_IF(res.error, "Failed to register uintr");
+  uintr_index = res.index;
+}
+
+void init_syscall_table(void) {
+  sel4muslcsys_register_stdio_write_fn(write_buf);
+  muslcsys_register_syscall_trace_fn(syscall_trace);
 
   muslcsys_install_syscall(__NR_readv, sel4service_readv);
   muslcsys_install_syscall(__NR_read, sel4service_read);
